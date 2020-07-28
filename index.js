@@ -16,5 +16,5 @@ const paymentSchema = new mongoose.Schema({
 paymentSchema.plugin(stateMachinePlugin, { stateMachine: stateMachine })
 const Payment = mongoose.model('Payment', paymentSchema)
 
-const userId = '5f1873e0f353531f8a36b140'
+const userId = '5f1873e0f353531f8a36b144'
 TelegramBot(Payment, userId)

@@ -10,23 +10,14 @@ const messageProcess = (state, text) => {
         case 'waitingstart':
             return text === '/start' && 'gotstart'
             break
-        case 'waitingbalance':
-            if (text === '/balance') {
-                return 'gotbalance'
-            } else if (text === '/pay') {
-                return 'gotname'
-            } else {
-                return false
-            }
-            break
         case 'waitingname':
-            return 'gotname'
+            return text === 'ramu' ? 'gotname' : 'gotinvalidname'
             break
         case 'waitingamount':
-            return 'gotamount'
+            return text === '10' ? 'gotamount' : 'gotinvalidamount'
             break
         case 'waitingfrequency':
-            return 'gotfrequency'
+            return text === 'week' ? 'gotfrequency' : 'gotinvalidfrequency'
             break
         case 'waitingdetails':
             return 'gotdetails'
@@ -72,6 +63,16 @@ const replyProcess = async (message, Model, userId) => {
             )
             await initState.save()
         },
+        onGotinvalidname: async (event, message) => {
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
+            await initState.save()
+        },
         onGotname: async (event, message) => {
             console.log(message)
             initState.id = message.text
@@ -84,8 +85,28 @@ const replyProcess = async (message, Model, userId) => {
             )
             await initState.save()
         },
+        onGotinvalidamount: async (event, message) => {
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
+            await initState.save()
+        },
         onGotamount: async (event, message) => {
             initState.amount = message.text
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
+            await initState.save()
+        },
+        onGotinvalidfrequency: async (event, message) => {
             lastMessage = bot.sendMessage(
                 message.chat.id,
                 replyMessage(event),
@@ -155,11 +176,20 @@ const replyMessage = event => {
         case 'gotstart':
             return "Let's begin! Enter remune ID you want to send"
             break
+        case 'gotinvalidname':
+            return "Sorry, I didn't catch that name! Try Enter again"
+            break
         case 'gotname':
             return 'How much you need to send?'
             break
+        case 'gotinvalidamount':
+            return 'Sorry, Enter some valid amount'
+            break
         case 'gotamount':
             return 'Enter your frequency'
+            break
+        case 'gotinvalidfrequency':
+            return 'Sorry, Enter some valid frequency'
             break
         case 'gotfrequency':
             return 'Please confirm (yes/no)?'
