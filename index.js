@@ -9,11 +9,12 @@ const paymentSchema = new mongoose.Schema({
     user: String,
     id: String,
     amount: String,
-    status: String
+    status: String,
+    frequency: String
 })
 
 paymentSchema.plugin(stateMachinePlugin, { stateMachine: stateMachine })
 const Payment = mongoose.model('Payment', paymentSchema)
 
-const userId = '5f1873e0f353531f8a36bd50'
+const userId = '5f1873e0f353531f8a36b140'
 TelegramBot(Payment, userId)

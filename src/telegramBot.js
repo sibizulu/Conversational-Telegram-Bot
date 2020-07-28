@@ -5,35 +5,49 @@ require('dotenv').config({ silent: true })
 const token = process.env.TELEGRAM_TOKEN
 const bot = new TelegramBot(token, { polling: true })
 
-const messageProcess1 = (state, text) => {
+const messageProcess = (state, text) => {
     switch (state) {
-        case 'start':
-            return text === '/start' && 'starting'
+        case 'waitingstart':
+            return text === '/start' && 'gotstart'
             break
-        case 'name':
-            return text === '/pay' && 'askName'
-            break
-        case 'balance':
-            return text === '/pay' && 'askName'
-            break
-        case 'amount':
-            return 'askAmount'
-            break
-        case 'details':
-            return 'showDetails'
-            break
-        case 'confirm':
-            if (text === 'yes') {
-                return 'confirmed'
-            } else if (text === 'no') {
-                return 'cancelled'
+        case 'waitingbalance':
+            if (text === '/balance') {
+                return 'gotbalance'
+            } else if (text === '/pay') {
+                return 'gotname'
             } else {
-                return 'invalid'
+                return false
             }
+            break
+        case 'waitingname':
+            return 'gotname'
+            break
+        case 'waitingamount':
+            return 'gotamount'
+            break
+        case 'waitingfrequency':
+            return 'gotfrequency'
+            break
+        case 'waitingdetails':
+            return 'gotdetails'
+            break
+
+        case 'waitingconfirm':
+            if (text.toLowerCase() === 'yes') {
+                return 'gotconfirmed'
+            } else if (text.toLowerCase() === 'no') {
+                return 'gotcancelled'
+            } else {
+                return 'gotinvalid'
+            }
+        case 'waitinglink':
+            return 'gotlink'
+        case 'done':
+            return 'waitingstart'
     }
 }
 
-module.exports = async (Model, userId) => {
+const replyProcess = async (message, Model, userId) => {
     let initState = await Model.findOne({
         user: userId,
         status: { $ne: 'done' }
@@ -42,136 +56,132 @@ module.exports = async (Model, userId) => {
         initState = await Model.new({ user: userId }).save()
     }
 
+    let lastReply = message
+
+    let name
+    let lastMessage
+
     initState.observe({
-        onStarting: async (event, message) => {
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
+        onGotstart: async event => {
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
             await initState.save()
         },
-        onBalanceChecking: async (event, message) => {
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
-            await initState.save()
-        },
-        onAskName: async (event, message) => {
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
-            await initState.save()
-        },
-        onAskAmount: async (event, message) => {
+        onGotname: async (event, message) => {
+            console.log(message)
             initState.id = message.text
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
         },
-        onShowDetails: async (event, message) => {
+        onGotamount: async (event, message) => {
             initState.amount = message.text
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
         },
-        onConfirmed: async (event, message) => {
+        onGotfrequency: async (event, message) => {
+            initState.frequency = message.text
+            lastMessage = bot.sendMessage(
+                message.chat.id,
+                replyMessage(event),
+                {
+                    reply_markup: JSON.stringify({ force_reply: true })
+                }
+            )
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
         },
-        onCancelled: async (event, message) => {
+
+        onGotconfirmed: async (event, message) => {
+            lastMessage = bot.sendMessage(message.chat.id, replyMessage(event))
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
         },
-        onInvalid: async (event, message) => {
+        onGotcancelled: async (event, message) => {
+            lastMessage = bot.sendMessage(message.chat.id, replyMessage(event))
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
         },
-        onFinal: async (event, message) => {
+        onGotinvalid: async (event, message) => {
+            lastMessage = bot.sendMessage(message.chat.id, replyMessage(event))
             await initState.save()
-            const msg = replyProcess(event.transition)
-            bot.sendMessage(message.chat.id, msg)
+        },
+        onDone: async event => {
+            await initState.save()
         }
     })
 
-    const messageProcess = (state, text) => {
-        switch (state) {
-            case 'start':
-                return text === '/start' && 'starting'
-                break
-            case 'balance':
-                return text === '/balance'
-                    ? 'balanceChecking'
-                    : text === '/pay' && 'askName'
-                break
-            case 'name':
-                return 'askName'
-                break
-            case 'amount':
-                return 'askAmount'
-                break
-            case 'confirm':
-                if (text === 'yes') {
-                    return 'confirmed'
-                } else if (text === 'no') {
-                    return 'cancelled'
-                } else {
-                    return 'invalid'
-                }
-                break
-            case 'details':
-                return 'showDetails'
-                break
-            case 'link':
-                return 'final'
-                break
-        }
-    }
-
-    const replyProcess = event => {
+    while (initState.status != 'done') {
         console.log(initState)
+        let text = lastReply.text
+        let event = messageProcess(initState.status, text)
 
-        switch (event) {
-            case 'starting':
-                return "Let's begin! To start a payment with /pay or /balance to check the balance"
-                break
-            case 'balanceChecking':
-            case 'cancelled':
-                return 'Your balance! To start a payment with /pay'
-                break
-            case 'askName':
-                return "What's your ID?"
-                break
-            case 'askAmount':
-                return 'How much you need to send?'
-                break
-            case 'showDetails':
-            case 'invalid':
-                return (
-                    initState.amount +
-                    ' sending to ' +
-                    initState.id +
-                    '. Please confirm (yes/no)'
-                )
-                break
-            case 'confirmed':
-                return 'Link here ......'
-                break
-            case 'final':
-                return 'You can start again using /start'
-                break
-        }
-    }
-
-    bot.on('message', message => {
-        console.log(initState.status)
-        const event = messageProcess(initState.status, message.text)
-        console.log(event)
         if (!event || initState.cannot(event)) {
             bot.sendMessage(
                 message.chat.id,
                 "I wasn't expecting that, try /start"
             )
-        } else {
-            initState[event](message)
+            break
+        }
+
+        initState[event](lastReply)
+        let sentMessage = await lastMessage
+
+        lastReply = await new Promise(resolve =>
+            bot.onReplyToMessage(
+                sentMessage.chat.id,
+                sentMessage.message_id,
+                resolve
+            )
+        )
+    }
+}
+
+const replyMessage = event => {
+    switch (event.transition) {
+        case 'gotstart':
+            return "Let's begin! Enter remune ID you want to send"
+            break
+        case 'gotname':
+            return 'How much you need to send?'
+            break
+        case 'gotamount':
+            return 'Enter your frequency'
+            break
+        case 'gotfrequency':
+            return 'Please confirm (yes/no)?'
+            break
+        case 'gotconfirmed':
+            return 'Link....'
+            break
+        case 'gotcancelled':
+            return 'Alright, start with /start'
+            break
+        case 'gotinvalid':
+            return "Sorry, I didn't catch that, do you want to cancel? (yes/no)"
+            break
+        default:
+    }
+}
+
+module.exports = async (Model, userId) => {
+    bot.on('message', message => {
+        console.log('enter', message)
+        if (!message.reply_to_message) {
+            replyProcess(message, Model, userId)
         }
     })
 }
